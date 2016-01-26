@@ -18,12 +18,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from __future__ import print_function
-
 import myo as libmyo; libmyo.init()
 import time
 import sys
+import numpy as np
+import math
+import matplotlib.pyplot as plt
+# import libardrone
 
+# drone = libardrone.ARDrone()
 
 class Listener(libmyo.DeviceListener):
     """
@@ -31,7 +34,7 @@ class Listener(libmyo.DeviceListener):
     stop the Hub.
     """
 
-    interval = 0.05  # Output only 0.05 seconds
+#    interval = 0.05  # Output only 0.05 seconds
 
     def __init__(self):
         super(Listener, self).__init__()
@@ -42,52 +45,53 @@ class Listener(libmyo.DeviceListener):
         self.rssi = None
         self.emg = None
         self.last_time = 0
+        # self.drone = ARDrone
+        self.initial_orientation = None
 
     def output(self):
-        # ctime = time.time()
-        # if (ctime - self.last_time) < self.interval:
-        #     return
-        # self.last_time = ctime
+        if self.initial_orientation is not None and (self.pose == libmyo.Pose.fingers_spread or self.pose == libmyo.Pose.fist):
+            vvector = 0.25 if self.pose == libmyo.Pose.fingers_spread else -0.25    # positive or negative thrust depending on pose
+            xdiff = self.orientation.x - self.intial_orientation.x
+            ydiff = self.orientation.y - self.intial_orientation.y
+            zdiff = self.orientation.z - self.initial_orientation.z
+        elif self.pose == libmyo.Pose.double_tap:
+            yaw,pit = main1()
+            e = [math.sin(a)*math.cos(b) for a in yaw for b in pit]
+            z = [math.sin(b) for b in pit]
+            if len(e) > len(z):
+                while len(e)-len(z)>0:
+                    z.append(0)
+            else:
+                while len(z) - len(e) >0:
+                    e.append(0)
+            print(len(e), len(z))
+            plt.scatter(e, z, s=500, c='k', marker=".")
+            plt.axis('on')
+            plt.savefig('test_image.png', bboxes_inches='tight')
+            sys.exit(0)
 
-        # parts = []
-        # if self.orientation:
-        #     for comp in self.orientation:
-        #         parts.append(str(comp).ljust(15))
-        # parts.append(str(self.pose).ljust(10))
-        # parts.append('E' if self.emg_enabled else ' ')
-        # parts.append('L' if self.locked else ' ')
-        # parts.append(self.rssi or 'NORSSI')
-        # if self.emg:
-        #     for comp in self.emg:
-        #         parts.append(str(comp).ljust(5))
-        # print('\r' + ''.join('[{0}]'.format(p) for p in parts), end='')
-        # sys.stdout.flush()
-        if self.orientation is not None:
-            print(self.orientation)
-            # print('yaw is %0.2f \t roll is %0.2f \t pitch is %0.2f' %(self.orientation.yaw,self.orientation.roll, self.orientation.pitch))
 
     def on_connect(self, myo, timestamp, firmware_version):
+	    #self.intial_orientation = myo.orientation()
         myo.vibrate('short')
         myo.vibrate('short')
         myo.request_rssi()
         myo.request_battery_level()
+        print('connected')
 
     def on_rssi(self, myo, timestamp, rssi):
         self.rssi = rssi
         self.output()
 
     def on_pose(self, myo, timestamp, pose):
-        if pose == libmyo.Pose.double_tap:
-            myo.set_stream_emg(libmyo.StreamEmg.enabled)
-            self.emg_enabled = True
-        elif pose == libmyo.Pose.fingers_spread:
-            myo.set_stream_emg(libmyo.StreamEmg.disabled)
-            self.emg_enabled = False
-            self.emg = None
+        #print "Pose Received: " + str(pose)
         self.pose = pose
         self.output()
 
     def on_orientation_data(self, myo, timestamp, orientation):
+        #print "Orientation Received"
+        if self.initial_orientation is None:
+            self.initial_orientation = orientation
         self.orientation = orientation
         self.output()
 
@@ -99,64 +103,56 @@ class Listener(libmyo.DeviceListener):
 
     def on_emg_data(self, myo, timestamp, emg):
         self.emg = emg
-        self.output()
+        #self.output()
 
     def on_unlock(self, myo, timestamp):
         self.locked = False
-        self.output()
+        #self.output()
 
     def on_lock(self, myo, timestamp):
         self.locked = True
-        self.output()
+        #self.output()
 
-    def on_event(self, kind, event):
-        """
-        Called before any of the event callbacks.
-        """
+def main1():
+    try:
+        hub = libmyo.Hub()
+    except MemoryError:
+        print("Myo Hub could not be created. Make sure Myo Connect is running.")
+        return
 
-    def on_event_finished(self, kind, event):
-        """
-        Called after the respective event callbacks have been
-        invoked. This method is *always* triggered, even if one of
-        the callbacks requested the stop of the Hub.
-        """
+    feed = libmyo.device_listener.Feed()
+    hub.run(1000, feed)
+    try:
+        print("Waiting for a Myo to connect ...")
+        myo = feed.wait_for_single_device(2)
+        if not myo:
+            print("No Myo connected after 2 seconds.")
+            return
 
-    def on_pair(self, myo, timestamp, firmware_version):
-        """
-        Called when a Myo armband is paired.
-        """
+        print("Hello, Myo!")
+        theta = []
+        phi = []
 
-    def on_unpair(self, myo, timestamp):
-        """
-        Called when a Myo armband is unpaired.
-        """
-
-    def on_disconnect(self, myo, timestamp):
-        """
-        Called when a Myo is disconnected.
-        """
-
-    def on_arm_sync(self, myo, timestamp, arm, x_direction, rotation,
-                    warmup_state):
-        """
-        Called when a Myo armband and an arm is synced.
-        """
-
-    def on_arm_unsync(self, myo, timestamp):
-        """
-        Called when a Myo armband and an arm is unsynced.
-        """
-
-    def on_battery_level_received(self, myo, timestamp, level):
-        """
-        Called when the requested battery level received.
-        """
-
-    def on_warmup_completed(self, myo, timestamp, warmup_result):
-        """
-        Called when the warmup completed.
-        """
-
+        while hub.running and myo.connected:
+            theta.append(myo.orientation.yaw)
+            phi.append(myo.orientation.pitch)
+            # with open('test.txt', 'a') as outfile:
+            #     outfile.write(str(myo.orientation.pitch)+'\t'+str(myo.orientation.yaw)+'\n')
+            print('p:%s\ty:%s'%(myo.orientation.pitch, myo.orientation.yaw))
+            time.sleep(0.3)
+            # outfile.close()
+            if myo.pose == libmyo.Pose.fingers_spread:
+                return theta, phi
+            # print(libmyo.pose
+        print("Goodbye, Myo!")
+    except KeyboardInterrupt:
+        print("Keyboard Interrupt.")
+    else:
+        print("Myo disconnected.")
+    finally:
+        print("Shutting down Myo Hub ...")
+        hub.shutdown()
+    return theta, phi
 
 def main():
     print("Connecting to Myo ... Use CTRL^C to exit.")
@@ -165,7 +161,8 @@ def main():
     except MemoryError:
         print("Myo Hub could not be created. Make sure Myo Connect is running.")
         return
-
+	
+	#drone = libardrone.ARDrone()
     hub.set_locking_policy(libmyo.LockingPolicy.none)
     hub.run(1000, Listener())
 
@@ -179,7 +176,6 @@ def main():
         print("Shutting down hub...")
         hub.shutdown()
 
-
+print('What is 3 minus 2?')
 if __name__ == '__main__':
     main()
-
